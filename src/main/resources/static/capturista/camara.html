@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captura de INE - OCR</title>
+    <!-- Bootstrap para que se vea pro -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #121212; color: white; }
+        #video-container {
+            position: relative;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        video {
+            width: 100%;
+            border-radius: 15px;
+            border: 2px solid #333;
+        }
+        /* Guía visual para centrar la INE */
+        .guia-ine {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 85%;
+            height: 55%;
+            border: 3px dashed gold;
+            border-radius: 10px;
+            pointer-events: none;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container py-4 text-center">
+    <h2 class="mb-4">Escaneo de Identificación</h2>
+
+    <div id="video-container">
+        <video id="video" autoplay playsinline></video>
+        <div class="guia-ine"></div>
+    </div>
+
+    <div class="mt-4">
+        <button id="btnCapturar" class="btn btn-warning btn-lg w-100 shadow">
+            📷 CAPTURAR Y PROCESAR
+        </button>
+    </div>
+
+    <!-- Canvas oculto para procesar la imagen -->
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <div id="status" class="mt-3 text-info"></div>
+</div>
+
+<script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const btnCapturar = document.getElementById('btnCapturar');
+    const statusDiv = document.getElementById('status');
+
+    // 1. Iniciar la cámara trasera
+    navigator.mediaDevices.getUserMedia({
+        video: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+        }
+    })
+    .then(stream => {
+        video.srcObject = stream;
+    })
+    .catch(err => {
+        console.error("Error acceso cámara:", err);
+        alert("No se pudo acceder a la cámara. Revisa los permisos.");
+    });
+
+    // 2. Evento al presionar el botón
+    btnCapturar.addEventListener('click', async () => {
+        statusDiv.innerText = "Capturando...";
+
+        // Configurar tamaño del canvas igual al video
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        // Dibujar el frame del video en el canvas
+        const context = canvas.getContext('2d');
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Convertir imagen a Base64
+        const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+
+        statusDiv.innerText = "Enviando al servidor...";
+
+        // 3. Enviar a Spring Boot
+        try {
+            const response = await fetch('/api/ocr/procesar', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ imagen: base64Image })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                statusDiv.innerText = "✅ " + data.mensaje;
+                alert("Servidor dice: " + data.mensaje);
+            } else {
+                statusDiv.innerText = "❌ Error en el servidor";
+            }
+        } catch (error) {
+            console.error("Error en el envío:", error);
+            statusDiv.innerText = "❌ Error de conexión";
+        }
+    });
+</script>
+</body>
+</html>
