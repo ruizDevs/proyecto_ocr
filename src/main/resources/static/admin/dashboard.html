@@ -2,22 +2,228 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Panel de Administración</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Administración - OCR INE</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .table-container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .cursor-pointer { cursor: pointer; }
+    </style>
 </head>
-<body class="bg-light">
-<nav class="navbar navbar-dark bg-primary mb-4">
+<body>
+<nav class="navbar navbar-dark bg-primary mb-4 shadow-sm">
     <div class="container-fluid">
-        <span class="navbar-brand mb-0 h1">OCR INE - Panel de Auditoría</span>
+        <div class="d-flex align-items-center">
+            <img src="/logo.png" alt="Logo" height="30" class="me-2 bg-white rounded p-1">
+            <span class="navbar-brand mb-0 h1">IdentiScan - Auditoría</span>
+        </div>
         <a href="/login.html" class="btn btn-outline-light btn-sm">Cerrar Sesión</a>
     </div>
 </nav>
-<div class="container">
-    <div class="alert alert-success">
-        ¡Bienvenido, Administrador! La conexión con la base de datos es exitosa.
+
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="text-primary fw-bold m-0">Registros Capturados</h3>
+        <div>
+            <button class="btn btn-outline-primary fw-bold me-2" onclick="abrirModalUsuario()">+ Nuevo Capturista</button>
+            <a href="/api/ine/exportar" class="btn btn-success fw-bold">⬇️ Exportar a CSV</a>
+        </div>
     </div>
-    <h3>Registros Capturados</h3>
-    <p class="text-muted">Aquí aparecerá la tabla con los INEs y quién los registró.</p>
+
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+            <form onsubmit="event.preventDefault(); cargarRegistros();" class="d-flex">
+                <input type="text" id="searchInput" class="form-control me-2" placeholder="Buscar por Nombre, CURP, o Sección (Coincidencia Parcial)...">
+                <button type="submit" class="btn btn-primary px-4">Buscar</button>
+                <button type="button" class="btn btn-outline-secondary ms-2" onclick="document.getElementById('searchInput').value=''; cargarRegistros();">Limpiar</button>
+            </form>
+        </div>
+    </div>
+    
+    <div class="table-container table-responsive">
+        <table class="table table-hover table-striped align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Evidencia</th>
+                    <th>CURP</th>
+                    <th>Nombre Completo</th>
+                    <th>Clave Elector</th>
+                    <th>Estado / Sec</th>
+                    <th>Capturado Por</th>
+                    <th>Fecha</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-registros">
+                <tr><td colspan="7" class="text-center">Cargando registros...</td></tr>
+            </tbody>
+        </table>
+    </div>
 </div>
+
+<!-- Modal Evidencia (RF-08) -->
+<div class="modal fade" id="modalEvidencia" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title">Cotejo de Evidencia</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body row">
+          <div class="col-md-7 text-center bg-light p-3 rounded">
+              <img id="imgEvidencia" src="" class="img-fluid rounded border" style="max-height: 500px;" alt="Evidencia">
+          </div>
+          <div class="col-md-5">
+              <h5 class="border-bottom pb-2 mb-3">Datos Extraídos</h5>
+              <p><strong>CURP:</strong> <span id="modCurp" class="font-monospace text-primary"></span></p>
+              <p><strong>Nombre:</strong> <span id="modNombre"></span></p>
+              <p><strong>Clave Elector:</strong> <span id="modClave" class="font-monospace"></span></p>
+              <p><strong>Sección:</strong> <span id="modSeccion"></span></p>
+              <p><strong>Estado:</strong> <span id="modEstado"></span></p>
+              <p><strong>Dirección:</strong> <span id="modDireccion"></span></p>
+              <hr>
+              <p class="small text-muted">Confianza OCR: <span id="modConfianza"></span>%</p>
+          </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nuevo Capturista -->
+<div class="modal fade" id="modalUsuario" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title">Agregar Nuevo Capturista</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+          <form id="formUsuario" onsubmit="guardarUsuario(event)">
+              <div class="mb-3">
+                  <label class="form-label">Nombre de Usuario</label>
+                  <input type="text" id="nuevoUsername" class="form-control" required>
+              </div>
+              <div class="mb-3">
+                  <label class="form-label">Contraseña</label>
+                  <input type="password" id="nuevoPassword" class="form-control" required>
+              </div>
+              <div class="mb-3">
+                  <label class="form-label">Rol</label>
+                  <select id="nuevoRol" class="form-select">
+                      <option value="CAPTURISTA">Capturista (Aplicación Móvil)</option>
+                      <option value="ADMIN">Administrador (Panel Web)</option>
+                  </select>
+              </div>
+              <button type="submit" class="btn btn-primary w-100">Crear Usuario</button>
+          </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    let registrosGlob = [];
+    const modalEvidencia = new bootstrap.Modal(document.getElementById('modalEvidencia'));
+    const modalUsuario = new bootstrap.Modal(document.getElementById('modalUsuario'));
+
+    function abrirModalUsuario() {
+        document.getElementById('formUsuario').reset();
+        modalUsuario.show();
+    }
+
+    async function guardarUsuario(event) {
+        event.preventDefault();
+        const btn = event.target.querySelector('button');
+        btn.disabled = true;
+        btn.innerText = "Guardando...";
+
+        const payload = {
+            username: document.getElementById('nuevoUsername').value,
+            password: document.getElementById('nuevoPassword').value,
+            rol: document.getElementById('nuevoRol').value
+        };
+
+        try {
+            const res = await fetch('/api/usuarios/crear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            
+            if (res.ok) {
+                alert("Usuario creado exitosamente.");
+                modalUsuario.hide();
+            } else {
+                alert("Error: " + (data.error || "No se pudo crear."));
+            }
+        } catch (e) {
+            alert("Error de conexión al servidor.");
+        }
+        btn.disabled = false;
+        btn.innerText = "Crear Usuario";
+    }
+
+    async function cargarRegistros() {
+        const query = document.getElementById('searchInput').value;
+        const url = query ? '/api/ine/registros?query=' + encodeURIComponent(query) : '/api/ine/registros';
+        
+        try {
+            const response = await fetch(url);
+            if (response.ok) {
+                registrosGlob = await response.json();
+                const tbody = document.getElementById('tabla-registros');
+                tbody.innerHTML = '';
+                
+                if (registrosGlob.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center">No se encontraron registros.</td></tr>';
+                    return;
+                }
+
+                registrosGlob.forEach((r, index) => {
+                    const username = r.capturadoPor ? r.capturadoPor.username : 'Desconocido';
+                    const fecha = new Date(r.fechaCaptura).toLocaleString('es-MX');
+                    const nombreCompleto = `${r.nombre || ''} ${r.apellidoPaterno || ''} ${r.apellidoMaterno || ''}`;
+                    
+                    const btnImg = r.rutaImagen 
+                        ? `<button class="btn btn-sm btn-outline-primary" onclick="abrirEvidencia(${index})">👁️ Ver</button>` 
+                        : '<span class="badge bg-secondary">N/A</span>';
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${btnImg}</td>
+                        <td class="font-monospace">${r.curp || ''}</td>
+                        <td>${nombreCompleto}</td>
+                        <td class="font-monospace">${r.claveElector || ''}</td>
+                        <td>${r.estado || '-'} / ${r.seccion || '-'}</td>
+                        <td><span class="badge bg-info text-dark">${username}</span></td>
+                        <td class="small text-muted">${fecha}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } else {
+                alert("Error al cargar registros. Probablemente necesitas iniciar sesión.");
+            }
+        } catch (error) {
+            document.getElementById('tabla-registros').innerHTML = '<tr><td colspan="7" class="text-center text-danger">Error de red</td></tr>';
+        }
+    }
+
+    function abrirEvidencia(index) {
+        const r = registrosGlob[index];
+        document.getElementById('imgEvidencia').src = '/api/ine/imagen?ruta=' + encodeURIComponent(r.rutaImagen);
+        document.getElementById('modCurp').innerText = r.curp;
+        document.getElementById('modNombre').innerText = `${r.nombre || ''} ${r.apellidoPaterno || ''} ${r.apellidoMaterno || ''}`;
+        document.getElementById('modClave').innerText = r.claveElector;
+        document.getElementById('modSeccion').innerText = r.seccion;
+        document.getElementById('modEstado').innerText = r.estado || '';
+        document.getElementById('modDireccion').innerText = r.direccion || '';
+        document.getElementById('modConfianza').innerText = r.indiceConfianza;
+        modalEvidencia.show();
+    }
+
+    document.addEventListener('DOMContentLoaded', cargarRegistros);
+</script>
 </body>
 </html>

@@ -24,11 +24,15 @@ public class LoginController {
     @PostMapping("/login")
     public String login(@RequestParam String username,
                         @RequestParam String password,
+                        jakarta.servlet.http.HttpSession session,
                         Model model) {
 
         Usuario usuario = usuarioService.validarLogin(username, password);
 
         if (usuario != null) {
+            // Guardar usuario en sesion
+            session.setAttribute("usuarioLogueado", usuario);
+
             // Si el usuario existe, checamos el rol para saber a dónde mandarlo
             if (usuario.getRol().equals("ADMIN")) {
                 return "redirect:/admin/dashboard.html";
