@@ -8,6 +8,9 @@ import org.springframework.stereotype.Repository;
 public interface IneRegistroRepository extends JpaRepository<IneRegistro, Long> {
     java.util.List<IneRegistro> findByCapturadoPor(com.example.demo.modelo.Usuario capturadoPor);
 
+    java.util.List<IneRegistro> findByCurp(String curp);
+    java.util.List<IneRegistro> findByClaveElector(String claveElector);
+
     @org.springframework.data.jpa.repository.Query("SELECT i FROM IneRegistro i WHERE " +
             "LOWER(i.nombre) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
             "LOWER(i.apellidoPaterno) LIKE LOWER(CONCAT('%', :query, '%')) OR " +

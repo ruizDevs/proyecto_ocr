@@ -137,9 +137,22 @@
             </div>
         </div>
 
+        <div class="mb-3">
+            <label class="form-label">CIC (Identificador Reverso)</label>
+            <div class="input-group">
+                <input type="text" id="inputCic" class="form-control form-control-dark font-monospace" placeholder="Escanear reverso...">
+                <button onclick="openScanner(true)" class="btn btn-outline-primary" type="button">📸</button>
+            </div>
+        </div>
+
         <div class="mb-4">
-            <label class="form-label">Dirección (Opcional)</label>
-            <textarea id="inputDireccion" class="form-control form-control-dark" rows="2"></textarea>
+            <details class="small">
+                <summary class="text-secondary">Ver detalles técnicos (Debug)</summary>
+                <div class="mt-2 p-2 bg-dark rounded border border-secondary" style="font-size: 0.7rem; max-height: 150px; overflow-y: auto;">
+                    <div id="debug-motor" class="text-primary mb-1"></div>
+                    <pre id="debug-raw" class="text-secondary m-0" style="white-space: pre-wrap;"></pre>
+                </div>
+            </details>
         </div>
 
         <button onclick="confirmAndSave()" class="btn btn-success-premium w-100 py-3 shadow-lg">
@@ -166,8 +179,9 @@
     const scannerOverlay = document.getElementById('scannerOverlay');
 
     let stream = null;
-    let currentData = null;
+    let currentData = {};
     let currentBase64Image = null;
+    let scanningBack = false;
 
     function hideAllViews() { viewMenu.classList.remove('active'); viewScanner.classList.remove('active'); viewPreview.classList.remove('active'); }
     function showMenu() { stopCamera(); hideAllViews(); viewMenu.classList.add('active'); loadHistory(); }
@@ -175,7 +189,8 @@
     function hideLoader() { loader.style.display = 'none'; }
     function stopCamera() { if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; } video.style.display = 'none'; }
 
-    function openScanner() {
+    function openScanner(isBack = false) {
+        scanningBack = isBack;
         hideAllViews();
         viewScanner.classList.add('active');
         document.getElementById('btnCapturar').style.display = 'block';
@@ -184,7 +199,7 @@
         imgPreview.style.display = 'none';
         scannerOverlay.style.display = 'block';
         
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } })
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } } })
         .then(s => { stream = s; video.srcObject = stream; })
         .catch(err => { alert("No se pudo acceder a la cámara."); showMenu(); });
     }
@@ -192,12 +207,10 @@
     function handleFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
-        
         const reader = new FileReader();
         reader.onload = function(e) {
             currentBase64Image = e.target.result;
             imgPreview.src = currentBase64Image;
-            
             hideAllViews();
             viewScanner.classList.add('active');
             document.getElementById('btnCapturar').style.display = 'none';
@@ -210,10 +223,24 @@
     }
 
     document.getElementById('btnCapturar').addEventListener('click', () => {
-        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        // --- LÓGICA DE RECORTE (CROP) ---
+        const vW = video.videoWidth;
+        const vH = video.videoHeight;
+        
+        // Calculamos el área del overlay (85% ancho, 35% alto)
+        const cropW = vW * 0.85;
+        const cropH = vH * 0.35;
+        const cropX = (vW - cropW) / 2;
+        const cropY = (vH - cropH) / 2;
+
+        canvas.width = cropW;
+        canvas.height = cropH;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        currentBase64Image = canvas.toDataURL('image/jpeg', 0.8);
+        
+        // Dibujamos solo la parte central del video
+        ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        
+        currentBase64Image = canvas.toDataURL('image/jpeg', 0.9);
         stopCamera();
         enviarAProcesar();
     });
@@ -223,27 +250,46 @@
     });
 
     async function enviarAProcesar() {
-        showLoader("Analizando documento...");
+        showLoader(scanningBack ? "Leyendo reverso..." : "Analizando documento...");
         try {
             const response = await fetch('/api/ocr/procesar', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ imagen: currentBase64Image })
             });
-            if (response.status === 401) return window.location.href = '/login.html';
             const data = await response.json();
             hideLoader();
 
             if (response.ok && data.status === 'ok') {
-                currentData = data.registro;
-                document.getElementById('inputCurp').value = currentData.curp || '';
-                document.getElementById('inputClave').value = currentData.claveElector || '';
-                document.getElementById('inputSeccion').value = currentData.seccion || '';
-                document.getElementById('inputEstado').value = currentData.estado || '';
-                document.getElementById('inputDireccion').value = currentData.direccion || '';
-                document.getElementById('inputNombre').value = currentData.nombre === 'REVISAR' ? '' : currentData.nombre;
-                document.getElementById('inputPaterno').value = currentData.apellidoPaterno === 'REVISAR' ? '' : currentData.apellidoPaterno;
-                document.getElementById('inputMaterno').value = currentData.apellidoMaterno === 'REVISAR' ? '' : currentData.apellidoMaterno;
+                const alertBox = document.querySelector('#view-preview .alert');
+                if (data.yaExiste) {
+                    alertBox.classList.remove('alert-dark');
+                    alertBox.classList.add('alert-danger', 'text-danger');
+                    alertBox.innerHTML = `<strong>${data.mensaje}</strong><br>Los datos coinciden con un registro previo.`;
+                } else {
+                    alertBox.classList.remove('alert-danger', 'text-danger');
+                    alertBox.classList.add('alert-dark');
+                    alertBox.innerHTML = 'Por favor verifica visualmente que la información extraída coincida con el documento original.';
+                }
+
+                if (scanningBack) {
+                    // Si estábamos escaneando el reverso, solo actualizamos el CIC
+                    document.getElementById('inputCic').value = data.registro.cic || '';
+                } else {
+                    // Escaneo frontal: llenamos todo
+                    currentData = data.registro;
+                    document.getElementById('inputCurp').value = currentData.curp || '';
+                    document.getElementById('inputClave').value = currentData.claveElector || '';
+                    document.getElementById('inputSeccion').value = currentData.seccion || '';
+                    document.getElementById('inputEstado').value = currentData.estado || '';
+                    document.getElementById('inputDireccion').value = currentData.direccion || '';
+                    document.getElementById('inputNombre').value = currentData.nombre === 'REVISAR' ? '' : currentData.nombre;
+                    document.getElementById('inputPaterno').value = currentData.apellidoPaterno === 'REVISAR' ? '' : currentData.apellidoPaterno;
+                    document.getElementById('inputMaterno').value = currentData.apellidoMaterno === 'REVISAR' ? '' : currentData.apellidoMaterno;
+                }
+                
+                document.getElementById('debug-motor').innerText = "Motor: " + (data.motor || "Desconocido");
+                document.getElementById('debug-raw').innerText = data.ocrTextoRaw || "";
 
                 hideAllViews();
                 viewPreview.classList.add('active');
@@ -253,15 +299,18 @@
 
     async function confirmAndSave() {
         showLoader("Guardando registro...");
-        currentData.curp = document.getElementById('inputCurp').value;
-        currentData.claveElector = document.getElementById('inputClave').value;
-        currentData.seccion = document.getElementById('inputSeccion').value;
-        currentData.estado = document.getElementById('inputEstado').value;
-        currentData.direccion = document.getElementById('inputDireccion').value;
-        currentData.nombre = document.getElementById('inputNombre').value || 'NO ESPECIFICADO';
-        currentData.apellidoPaterno = document.getElementById('inputPaterno').value || 'NO ESPECIFICADO';
-        currentData.apellidoMaterno = document.getElementById('inputMaterno').value || 'NO ESPECIFICADO';
-        currentData.requiereRevisionManual = false; 
+        Object.assign(currentData, {
+            curp: document.getElementById('inputCurp').value,
+            claveElector: document.getElementById('inputClave').value,
+            seccion: document.getElementById('inputSeccion').value,
+            estado: document.getElementById('inputEstado').value,
+            direccion: document.getElementById('inputDireccion').value,
+            nombre: document.getElementById('inputNombre').value || 'NO ESPECIFICADO',
+            apellidoPaterno: document.getElementById('inputPaterno').value || 'NO ESPECIFICADO',
+            apellidoMaterno: document.getElementById('inputMaterno').value || 'NO ESPECIFICADO',
+            cic: document.getElementById('inputCic').value,
+            requiereRevisionManual: false
+        });
 
         try {
             const response = await fetch('/api/ine/guardar', {
@@ -271,7 +320,7 @@
             });
             hideLoader();
             if (response.ok) showMenu();
-            else alert("No se pudo guardar.");
+            else alert("Error al guardar.");
         } catch (error) { hideLoader(); alert("Error de red."); }
     }
 

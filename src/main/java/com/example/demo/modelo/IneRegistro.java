@@ -37,6 +37,7 @@ public class IneRegistro {
     // Nuevos campos según RF-02
     private String estado;
     private String direccion;
+    private String cic; // Código Identificador de Credencial (Reverso)
     private String rutaImagen; // RF-05: Almacenamiento en File System
 
     // Requerimiento de confianza (RF-04)
